@@ -222,7 +222,7 @@ Pb = np.zeros(powerValues.shape)
 
 discard = 100
 for indPi, Pi_dBm in enumerate(tqdm(powerValues)):
-    
+
     Pi = 10**((Pi_dBm+3)/10)*1e-3 # optical signal power in W at the MZM input
 
     # generate pseudo-random bit sequence
