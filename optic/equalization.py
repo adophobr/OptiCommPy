@@ -119,7 +119,7 @@ def coreAdaptEq(x, dx, SpS, H, L, mu, lambdaRLS, nTaps, storeCoeff, alg, constSy
     Adaptive equalizer core processing function
     
     """
-    
+
     # allocate variables
     nModes  = int(x.shape[1])
     indTaps = np.arange(0, nTaps)
