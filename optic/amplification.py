@@ -24,6 +24,150 @@ import copy
 
 from optic.core import parameters
 
+class signal():
+    def __init__(self, frequency, power):
+        if len(frequency)!=len(power):
+            raise TypeError(
+            "signal class invalid argument - invalid lengths."
+        )
+        self.frequency = frequency
+        self.power = power
+
+    def get_frequency_hz(self):
+        return self.frequency
+    
+    def get_frequency_m(self):
+        return c/self.frequency
+    
+    def get_power_w(self):
+        return self.power
+    
+    def get_power_dBm(self):
+        return 10*np.log10(1e3*self.power)
+
+    def plot(self):
+        plt.plot(1e9*self.get_frequency_m(), self.get_power_dBm())
+        plt.xlabel('Wavelength [nm]')
+        plt.ylabel('Power [dBm]')
+        plt.grid(True)
+
+class control():
+    def __init__(self, parameter):
+        # controller parameters
+        self.kp = getattr(parameter, "kp", 1e-2)
+        self.ki = getattr(parameter, "ki", 1e-2)
+        self.kd = getattr(parameter, "kd", 5e-2)
+        # setpoint and control type
+        self.type = getattr(parameter, "type", "AGC")
+        if self.type in {"AGC", "APC", "none"}:
+            self.setpoint = getattr(parameter, "setpoint", 20)  # dB (for gain) and dBm (for power)
+        else:
+            raise TypeError("control.type invalid argument - [AGC, APC, none].")
+
+class solver():
+    def __init__(self, parameter):
+        # solver error
+        self.tol = getattr(parameter, "tol", 2 / 100)
+        self.tolCtrl = getattr(parameter, "tolCtrl", 0.5)     
+        # noise parameters
+        self.noiseBand = getattr(parameter, "noiseBand", 125e9)
+
+class giles():
+    def __init__(self, parameters):
+        self.file = getattr(parameters, "file", "")
+        if not (os.path.exists(self.file)):
+            raise TypeError(f"{self.file} file doesn't exist.")
+        self.file_unit = getattr(parameters, "fileunit", "nm")
+
+    def set_giles_frequency_from_file(self):
+        file_data = np.loadtxt(self.file)
+        # Verify file frequency unit
+        if self.file_unit == "nm":
+            self.frequency = file_data[:,0] * 1e-9
+        elif self.file_unit == "m":
+            self.frequency = file_data[:,0]
+        elif self.file_unit == "Hz'":
+            self.frequency = c/file_data[:,0]
+        elif self.file_unit == "THz":
+            self.frequency = c/file_data[:,0] * 1e-12
+        else:
+            raise TypeError('gile.fileunit invalid argument - [nm - m - Hz - THz].')
+    
+    def set_giles_coefficients_from_file(self):
+        file_data = np.loadtxt(self.file)
+        self.absorption_coefficient  = 0.1 * np.log(10) * file_data[:,1]
+        self.gain_coefficient = 0.1 * np.log(10) * file_data[:,2]
+
+    def set_giles_cross_section_from_file(self):
+        file_data = np.loadtxt(self.file)
+        self.absorption_cross = file_data[:, 1]
+        self.emission_cross = file_data[:, 2]
+
+    def plot(self):
+        plt.plot(self.frequency, self.absorption_cross, label='Abs. cross-section')
+        plt.plot(self.frequency, self.emission_cross, label='Emission cross-section')
+        plt.grid(True)
+        plt.legend()        
+
+class edf(giles):
+    def __init__(self,parameter):
+        # init giles parameters
+        super().__init__(parameter.giles)        
+        # init geometric and material parameters
+        self.a = getattr(parameter, "a", 1.56e-6)
+        self.b = getattr(parameter, "b", 1.56e-6)
+        self.length = getattr(parameter, "length", 8)
+        self.rho = getattr(parameter, "rho", 0.955e25)
+        self.na = getattr(parameter, "na", 0.22)
+        # init algorithm parameters
+        self.geometric = getattr(parameter, "geometric", "LP01")
+        self.algorithm = getattr(parameter, "algorithm", "Giles_spectrum")
+        self.longitudinal_steps = getattr(parameter, "longitudinal_steps", 100)   
+        # init physical paramters
+        self.tal = getattr(parameter, "tal", 10e-3)
+        # init signal and pump loss paramters
+        self.loss_signal = getattr(parameter, "loss_signal", 2.08 * 0.0001 * np.log10(10))
+        self.loss_pump = getattr(parameter, "loss_pump", 2.08 * 0.0001 * np.log10(10))
+
+        if self.algo not in (
+        "Giles_spatial",
+        "Giles_spectrum",
+        "Saleh",
+        "Jopson",
+        "Inhomogeneous",
+        ):
+            raise TypeError(
+                "edfaSM.algo invalid argument - [Giles_spatial, Giles_spectrum, Saleh, Jopson, Inhomogeneous]."
+                )
+
+    def get_radius(self):
+        # Logitudinal step
+        self.dr = self.a / self.longitudinal_steps
+        self.r  = np.arange(0,self.a, self.dr)
+
+    def get_modal_paramters(self)
+        self.V = (2 * np.pi / param_edf.lbFl) * param_edfa.a * param_edfa.na
+        # u and v calculation for LP01 and Bessel profiles
+        self.u = ((1 + np.sqrt(2)) * self.V) / (1 + (4 + self.V ** 4) ** 0.25)
+        self.v = np.sqrt(self.V ** 2 - self.u ** 2)
+
+    def get_mode_radius(self, radius, V, v, u):
+        if self.gmtc == "Bessel":
+            w_gauss = radius * V / u * kv(1, v) / kv(0, v) * jv(0, u)
+        elif self.gmtc == "Marcuse":
+            w_gauss = radius * (0.650 + 1.619 / V ** 1.5 + 2.879 / V ** 6)
+        elif self.gmtc == "Whitley":
+            w_gauss = radius * (0.616 + 1.660 / V ** 1.5 + 0.987 / V ** 6)
+        elif self.gmtc == "Desurvire":
+            w_gauss = radius * (0.759 + 1.289 / V ** 1.5 + 1.041 / V ** 6)
+        elif self.gmtc == "Myslinski":
+            w_gauss = radius * (0.761 + 1.237 / V ** 1.5 + 1.429 / V ** 6)
+        else:
+            raise TypeError(
+            "model invalid argument - [LP01 - Marcuse - Whitley - Desurvire - Myslinski - Bessel]."
+            )
+
+
 def power_meter(x):
     """
     Calculate the total power of x.
@@ -202,22 +346,7 @@ def getOverlapInt(n2_norm, properties, param_edf):
     dopPrf = npmat.repmat(2 * np.pi * param_edf.r * n2_norm, np.shape(properties.i_k)[1], 1) * param_edf.dr
     return np.trapz(np.transpose(properties.i_k) * dopPrf)
 
-def get_mode_radius(model, radius, V, v, u):
-    if model == "Bessel":
-        w_gauss = radius * V / u * kv(1, v) / kv(0, v) * jv(0, u)
-    elif model == "Marcuse":
-        w_gauss = radius * (0.650 + 1.619 / V ** 1.5 + 2.879 / V ** 6)
-    elif model == "Whitley":
-        w_gauss = radius * (0.616 + 1.660 / V ** 1.5 + 0.987 / V ** 6)
-    elif model == "Desurvire":
-        w_gauss = radius * (0.759 + 1.289 / V ** 1.5 + 1.041 / V ** 6)
-    elif model == "Myslinski":
-        w_gauss = radius * (0.761 + 1.237 / V ** 1.5 + 1.429 / V ** 6)
-    else:
-        raise TypeError(
-        "model invalid argument - [LP01 - Marcuse - Whitley - Desurvire - Myslinski - Bessel]."
-        )
-    return w_gauss
+
 
 def updtCnst(param):
     xi = np.pi * param.b ** 2 * param.rho / param.tal
@@ -233,22 +362,8 @@ def updtCnst(param):
 def edfParams(param_edfa):
     # Create EDF struct
     param_edf = parameters()
-    # Load Gile's file
-    fileT = np.loadtxt(param_edfa.file)
-    # Verify file frequency unit
-    if param_edfa.fileunit == "nm":
-        param_edf.lbFl = fileT[:,0] * 1e-9
-    elif param_edfa.fileunit == "m":
-        param_edf.lbFl = fileT[:,0]
-    elif param_edfa.fileunit == "Hz'":
-        param_edf.lbFl = c/fileT[:,0]
-    elif param_edfa.fileunit == "THz":
-        param_edf.lbFl = c/fileT[:,0] * 1e-12
-    else:
-        raise TypeError('edfaSM.fileunit invalid argument - [nm - m - Hz - THz].')
-    # Logitudinal step
-    param_edf.dr = param_edfa.a / param_edfa.longSteps
-    param_edf.r  = np.arange(0,param_edfa.a, param_edf.dr)
+
+
     # Define field profile
     V = (2 * np.pi / param_edf.lbFl) * param_edfa.a * param_edfa.na
     # u and v calculation for LP01 and Bessel profiles
@@ -301,27 +416,7 @@ def edfParams(param_edfa):
 
 
 def edfaArgs(param_edfa):
-    # gain or power control parameters
-    param_edfa.type = getattr(param_edfa, "type", "AGC")
-    param_edfa.value = getattr(
-        param_edfa, "value", 20
-    )  # dB (for gain) and dBm (for power)
-    param_edfa.kp = getattr(param_edfa, "kp", 1e-2)
-    param_edfa.ki = getattr(param_edfa, "ki", 1e-2)
-    param_edfa.kd = getattr(param_edfa, "kd", 5e-2)
-    # edf parameters
-    param_edfa.file = getattr(param_edfa, "file", "")
-    param_edfa.fileunit = getattr(param_edfa, "fileunit", "nm")
-    param_edfa.a = getattr(param_edfa, "a", 1.56e-6)
-    param_edfa.b = getattr(param_edfa, "b", 1.56e-6)
-    param_edfa.rho = getattr(param_edfa, "rho", 0.955e25)
-    param_edfa.na = getattr(param_edfa, "na", 0.22)
-    param_edfa.gmtc = getattr(param_edfa, "gmtc", "LP01")
-    param_edfa.algo = getattr(param_edfa, "algo", "Giles_spectrum")
-    param_edfa.lngth = getattr(param_edfa, "lngth", 8)
-    param_edfa.tal = getattr(param_edfa, "tal", 10e-3)
-    param_edfa.lossS = getattr(param_edfa, "lossS", 2.08 * 0.0001 * np.log10(10))
-    param_edfa.lossP = getattr(param_edfa, "lossP", 2.08 * 0.0001 * np.log10(10))
+
     # pump paramters
     param_edfa.forPump = getattr(
         param_edfa,
@@ -333,30 +428,7 @@ def edfaArgs(param_edfa):
         "bckPump",
         {"pump_signal": np.array([100e-3]), "pump_lambda": np.array([980e-9])},
     )    
-    # solver parameters
-    param_edfa.longSteps = getattr(param_edfa, "longSteps", 100)
-    param_edfa.tol = getattr(param_edfa, "tol", 2 / 100)
-    param_edfa.tolCtrl = getattr(param_edfa, "tolCtrl", 0.5)  # dB
-    # noise parameters
-    param_edfa.noiseBand = getattr(param_edfa, "noiseBand", 125e9)
 
-    # Verify amplification type
-    if param_edfa.type not in ("AGC", "APC", "none"):
-        raise TypeError("edfaSM.type invalid argument - [AGC, APC, none].")
-    # Verify giles file
-    if not (os.path.exists(param_edfa.file)):
-        raise TypeError(f"{param_edfa.file} file doesn't exist.")
-    # Verify algorithm argument
-    if param_edfa.algo not in (
-        "Giles_spatial",
-        "Giles_spectrum",
-        "Saleh",
-        "Jopson",
-        "Inhomogeneous",
-    ):
-        raise TypeError(
-            "edfaSM.algo invalid argument - [Giles_spatial, Giles_spectrum, Saleh, Jopson, Inhomogeneous]."
-        )
 
     return param_edfa
 
