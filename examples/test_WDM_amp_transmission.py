@@ -32,7 +32,7 @@ from optic.plot import pconst
 
 import scipy.constants as const
 
-from optic.amplification import edfaSM,OSA
+from optic.amplifiers.amplification import edfaSM,OSA
 
 import os.path as path
 

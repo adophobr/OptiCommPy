@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 from scipy.special import erfc
 
 from scipy.constants import c
-from optic.amplification import edfaSM,OSA
+from optic.amplifiers.amplification import edfaSM,OSA
 
 import os.path as path
 

@@ -20,7 +20,7 @@ from scipy.signal import find_peaks
 
 from optic.core import parameters
 from optic.models import phaseNoise
-from optic.amplification import edfaSM, OSA, power_meter, get_spectrum
+from optic.amplifiers.amplification import edfaSM, OSA, power_meter, get_spectrum
 
 #import logging as logg
 #logg.getLogger().setLevel(logg.INFO)
